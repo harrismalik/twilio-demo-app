@@ -3,6 +3,14 @@ import { Head } from '@inertiajs/vue3';
 import { Device, Call } from '@twilio/voice-sdk';
 import { ref, computed, watch } from 'vue';
 
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+
 const agents = ['agent_1', 'agent_2'] as const;
 
 const identity = ref('agent_1');
@@ -33,6 +41,16 @@ const isConsulting = ref(false);
 
 const canTransfer = computed(() => isInCall.value && !isConsulting.value && transferTarget.value.trim() !== '');
 const canCompleteTransfer = computed(() => isConsulting.value && consultCallSid.value !== '');
+
+const statusVariant = computed(() => {
+    if (status.value === 'Error') {
+        return 'destructive';
+    }
+    if (status.value === 'Connected' || status.value === 'Ready') {
+        return 'default';
+    }
+    return 'secondary';
+});
 
 /**
  * Extract the parent (customer-side) call SID from the active call.
@@ -224,8 +242,6 @@ async function blindTransfer() {
             throw new Error('Transfer API returned failure');
         }
 
-        // Agent A's browser leg will disconnect on its own once the caller
-        // leg is redirected away from <Dial><Client>agent_1</Client></Dial>.
         status.value = 'Transferred (blind)';
     } catch (err) {
         error.value = `Blind transfer failed: ${err instanceof Error ? err.message : String(err)}`;
@@ -299,84 +315,126 @@ async function completeWarmTransfer() {
 <template>
     <Head title="Agent Console" />
 
-    <div style="padding: 20px; font-family: monospace">
-        <h1>Twilio Agent Console</h1>
-
-        <p><strong>Status:</strong> {{ status }}</p>
-        <p v-if="error" style="color: red"><strong>Error:</strong> {{ error }}</p>
-        <p v-if="parentCallSid">
-            <small>Parent Call SID: {{ parentCallSid }}</small>
-        </p>
-
-        <hr />
-
-        <!-- Connection -->
-        <div>
-            <h2>Connection</h2>
-            <div v-if="!isConnected">
-                <label>
-                    Identity:
-                    <select v-model="identity">
-                        <option v-for="agent in agents" :key="agent" :value="agent">{{ agent }}</option>
-                    </select>
-                </label>
-                <button @click="connect">Connect</button>
+    <div class="bg-background min-h-screen">
+        <div class="mx-auto max-w-lg px-4 py-10">
+            <!-- Header -->
+            <div class="mb-6 flex items-center justify-between">
+                <div>
+                    <h1 class="text-foreground text-2xl font-semibold tracking-tight">Agent Console</h1>
+                    <p class="text-muted-foreground text-sm">Twilio Voice SDK</p>
+                </div>
+                <Badge :variant="statusVariant">{{ status }}</Badge>
             </div>
-            <div v-else>
-                <p>Connected as: {{ identity }}</p>
-                <button @click="disconnect">Disconnect</button>
-            </div>
-        </div>
 
-        <hr />
+            <!-- Error -->
+            <Alert v-if="error" variant="destructive" class="mb-4">
+                <AlertDescription>{{ error }}</AlertDescription>
+            </Alert>
 
-        <!-- Incoming Calls -->
-        <div v-if="hasIncomingCall">
-            <h2>Incoming Call</h2>
-            <p>From: {{ callerNumber }}</p>
-            <button @click="acceptCall">Accept</button>
-            <button @click="rejectCall">Reject</button>
-        </div>
+            <!-- Connection -->
+            <Card>
+                <CardHeader>
+                    <CardTitle>Connection</CardTitle>
+                    <CardDescription v-if="isConnected">
+                        Signed in as <span class="font-medium">{{ identity }}</span>
+                    </CardDescription>
+                    <CardDescription v-else>Select an identity and connect to start.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div v-if="!isConnected" class="flex items-center gap-3">
+                        <Select v-model="identity">
+                            <SelectTrigger class="w-[160px]">
+                                <SelectValue placeholder="Identity" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem v-for="agent in agents" :key="agent" :value="agent">
+                                    {{ agent }}
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <Button @click="connect">Connect</Button>
+                    </div>
+                    <Button v-else variant="outline" @click="disconnect">Disconnect</Button>
+                </CardContent>
+            </Card>
 
-        <!-- Outbound Calls -->
-        <div v-if="isConnected && !isInCall && !hasIncomingCall && !isConsulting">
-            <h2>Make a Call</h2>
-            <label>
-                Phone Number:
-                <input v-model="phoneNumber" type="text" placeholder="+1234567890" />
-            </label>
-            <button @click="makeCall">Call</button>
-        </div>
+            <!-- Incoming Call -->
+            <Card v-if="hasIncomingCall" class="mt-4 border-ring">
+                <CardHeader>
+                    <CardTitle>Incoming Call</CardTitle>
+                    <CardDescription>From {{ callerNumber }}</CardDescription>
+                </CardHeader>
+                <CardContent class="flex gap-3">
+                    <Button @click="acceptCall">Accept</Button>
+                    <Button variant="destructive" @click="rejectCall">Reject</Button>
+                </CardContent>
+            </Card>
 
-        <!-- Active Call -->
-        <div v-if="isInCall">
-            <h2>Active Call</h2>
-            <p>In Call</p>
-            <button @click="hangUp">Hang Up</button>
-        </div>
+            <!-- Dial Pad -->
+            <Card v-if="isConnected && !isInCall && !hasIncomingCall && !isConsulting" class="mt-4">
+                <CardHeader>
+                    <CardTitle>Make a Call</CardTitle>
+                    <CardDescription>Enter a phone number in E.164 format.</CardDescription>
+                </CardHeader>
+                <CardContent class="flex gap-3">
+                    <Input v-model="phoneNumber" type="tel" placeholder="+1234567890" class="flex-1" />
+                    <Button :disabled="!phoneNumber.trim()" @click="makeCall">Call</Button>
+                </CardContent>
+            </Card>
 
-        <!-- Transfer Controls -->
-        <div v-if="isInCall || isConsulting">
-            <hr />
-            <h2>Transfer</h2>
-            <div>
-                <label>
-                    Target Agent:
-                    <select v-model="transferTarget">
-                        <option v-for="agent in otherAgents" :key="agent" :value="agent">{{ agent }}</option>
-                    </select>
-                </label>
-            </div>
-            <div style="margin-top: 8px">
-                <button :disabled="!canTransfer" @click="blindTransfer">Blind Transfer</button>
-                <button :disabled="!canTransfer" @click="startWarmTransfer">Start Warm Transfer</button>
-                <button :disabled="!canCompleteTransfer" @click="completeWarmTransfer">Complete Transfer</button>
-            </div>
-            <p v-if="isConsulting">
-                <strong>Consulting with {{ transferTarget }}...</strong>
-                <br />
-                <small>Consult Call SID: {{ consultCallSid }}</small>
-            </p>
+            <!-- Active Call -->
+            <Card v-if="isInCall" class="mt-4">
+                <CardHeader>
+                    <CardTitle>Active Call</CardTitle>
+                    <CardDescription v-if="parentCallSid" class="font-mono text-xs">
+                        {{ parentCallSid }}
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <Button variant="destructive" @click="hangUp">Hang Up</Button>
+                </CardContent>
+            </Card>
+
+            <!-- Transfer -->
+            <Card v-if="isInCall || isConsulting" class="mt-4">
+                <CardHeader>
+                    <CardTitle>Transfer</CardTitle>
+                    <CardDescription v-if="isConsulting">
+                        Consulting with <span class="font-medium">{{ transferTarget }}</span>
+                    </CardDescription>
+                    <CardDescription v-else>Transfer the active call to another agent.</CardDescription>
+                </CardHeader>
+                <CardContent class="space-y-4">
+                    <Select v-model="transferTarget">
+                        <SelectTrigger>
+                            <SelectValue placeholder="Target agent" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem v-for="agent in otherAgents" :key="agent" :value="agent">
+                                {{ agent }}
+                            </SelectItem>
+                        </SelectContent>
+                    </Select>
+
+                    <Separator />
+
+                    <div class="flex flex-wrap gap-3">
+                        <Button variant="outline" :disabled="!canTransfer" @click="blindTransfer">
+                            Blind Transfer
+                        </Button>
+                        <Button variant="outline" :disabled="!canTransfer" @click="startWarmTransfer">
+                            Start Warm Transfer
+                        </Button>
+                        <Button :disabled="!canCompleteTransfer" @click="completeWarmTransfer">
+                            Complete Transfer
+                        </Button>
+                    </div>
+
+                    <p v-if="isConsulting" class="text-muted-foreground font-mono text-xs">
+                        Consult SID: {{ consultCallSid }}
+                    </p>
+                </CardContent>
+            </Card>
         </div>
     </div>
 </template>
