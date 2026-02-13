@@ -6,9 +6,7 @@ Features: inbound/outbound calls, blind transfers, and warm (consultative) trans
 
 ## Prerequisites
 
-- PHP 8.2+
-- Composer
-- Node.js & npm
+- Docker
 - A Twilio account with:
   - Account SID & Auth Token
   - An API Key & Secret (create at https://console.twilio.com/us1/account/keys-credentials/api-keys)
@@ -16,61 +14,85 @@ Features: inbound/outbound calls, blind transfers, and warm (consultative) trans
   - A Twilio phone number
 - [Twilio CLI](https://www.twilio.com/docs/twilio-cli/getting-started/install) (for webhook configuration)
 
-## Setup
+## Local Development
 
 ```bash
 composer run setup
+composer run dev
 ```
 
-This installs dependencies, generates the app key, runs migrations (SQLite), and builds frontend assets.
+- Welcome page: http://localhost:8000
+- Agent console: http://localhost:8000/agent
 
-## Configure Environment
+## Docker
 
-Edit `.env` and fill in your Twilio credentials:
+### Build and run
+
+```bash
+docker compose up --build
+```
+
+App runs on http://localhost:8080.
+
+### Configure Environment
+
+Copy `.env.example` to `.env` and fill in your Twilio credentials:
 
 ```
+APP_KEY=base64:... (generate with: php artisan key:generate --show)
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=your_auth_token
 TWILIO_API_KEY=SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_API_SECRET=your_api_secret
 TWILIO_TWIML_APP_SID=APxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_FROM_NUMBER=+1234567890
 ```
 
-## Run
+### Run migrations inside container
 
 ```bash
-composer run dev
+docker compose exec php php artisan migrate --force
 ```
 
-This starts the Laravel server, queue listener, and Vite dev server concurrently.
+## Deploy to Sevalla
 
-- Welcome page: http://localhost:8000
-- Agent console: http://localhost:8000/agent
+Push the repo to your Sevalla app. Sevalla builds from the `Dockerfile` and serves on port 8080.
+
+Set the following environment variables in Sevalla's dashboard:
+
+```
+APP_NAME=TwilioDemo
+APP_ENV=production
+APP_KEY=base64:...
+APP_DEBUG=false
+APP_URL=https://your-app.sevalla.app
+DB_CONNECTION=sqlite
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=your_auth_token
+TWILIO_API_KEY=SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_API_SECRET=your_api_secret
+TWILIO_TWIML_APP_SID=APxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_FROM_NUMBER=+1234567890
+```
 
 ## Twilio Webhook Configuration
 
-For Twilio to reach your local server, expose it via a tunnel (e.g. ngrok):
-
-```bash
-ngrok http 8000
-```
-
-Use the resulting HTTPS URL as your base URL below.
+Replace `YOUR_DOMAIN` with your Sevalla URL (e.g. `your-app.sevalla.app`).
 
 ### Update TwiML App webhooks (voice URL + status callback)
 
 ```bash
 twilio api:core:applications:update \
   --sid APxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
-  --voice-url https://YOUR_TUNNEL.ngrok.io/api/twilio/voice/outgoing \
+  --voice-url https://YOUR_DOMAIN/api/twilio/voice/outgoing \
   --voice-method POST \
-  --status-callback https://YOUR_TUNNEL.ngrok.io/api/twilio/voice/status \
+  --status-callback https://YOUR_DOMAIN/api/twilio/voice/status \
   --status-callback-method POST
 ```
 
 ### Update Twilio phone number webhook (for inbound calls)
 
-First, find your phone number SID:
+Find your phone number SID:
 
 ```bash
 twilio phone-numbers:list
@@ -80,17 +102,14 @@ Then update it:
 
 ```bash
 twilio phone-numbers:update PNxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
-  --voice-url https://YOUR_TUNNEL.ngrok.io/api/twilio/voice/incoming \
+  --voice-url https://YOUR_DOMAIN/api/twilio/voice/incoming \
   --voice-method POST
 ```
 
 ### Verify configuration
 
 ```bash
-# Check TwiML App settings
 twilio api:core:applications:fetch --sid APxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-# Check phone number settings
 twilio phone-numbers:list
 ```
 
